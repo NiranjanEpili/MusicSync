@@ -7,11 +7,6 @@ module.exports = {
     extend: {
       screens: {
         'xs': '475px',
-        'sm': '640px',
-        'md': '768px',
-        'lg': '1024px',
-        'xl': '1280px',
-        '2xl': '1536px',
       },
       colors: {
         primary: {
@@ -40,21 +35,6 @@ module.exports = {
       boxShadow: {
         'glow': '0 0 20px rgba(124, 58, 237, 0.3)',
         '3d': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-      },
-      backdropBlur: {
-        xs: '2px',
-      },
-      fontSize: {
-        '2xs': '0.625rem',
-      },
-      spacing: {
-        '18': '4.5rem',
-        '88': '22rem',
-        '128': '32rem',
-      },
-      maxWidth: {
-        '8xl': '88rem',
-        '9xl': '96rem',
       },
     },
   },
