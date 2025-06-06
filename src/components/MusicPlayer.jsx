@@ -30,90 +30,64 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     checkMobile();
   }, []);
 
-  // Enable background play for mobile
-  const enableBackgroundPlay = () => {
-    if (isMobile && playerRef.current) {
-      try {
-        // Request audio context unlock (required for mobile)
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioContext.state === 'suspended') {
-          audioContext.resume();
-        }
-        
-        // Set up Wake Lock API if available
-        if ('wakeLock' in navigator) {
-          navigator.wakeLock.request('screen').catch(err => {
-            console.log('Wake lock failed:', err);
-          });
-        }
-        
-        setBackgroundPlayEnabled(true);
-        console.log('Background play enabled');
-      } catch (error) {
-        console.log('Background play setup failed:', error);
-      }
-    }
-  };
-
-  // Extract video ID from YouTube URL
+  // Extract YouTube video ID from URL
   const extractVideoId = (url) => {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+    const regex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/;
+    const match = url.match(regex);
+    return match ? match[1] : null;
   };
 
+  // Sync music state to Firebase
+  const syncMusicState = useCallback((state) => {
+    if (!isHost) return;
+    
+    const musicRef = ref(database, `rooms/${roomId}/music`);
+    const syncData = {
+      ...state,
+      lastUpdated: Date.now(),
+      updatedBy: userName
+    };
+    
+    console.log('Syncing music state:', syncData);
+    
+    set(musicRef, syncData).catch(error => {
+      console.error('Error syncing music state:', error);
+      setSyncStatus('error');
+    });
+  }, [roomId, isHost, userName]);
+
+  // Listen for music state changes from Firebase
   useEffect(() => {
     const musicRef = ref(database, `rooms/${roomId}/music`);
     
     const unsubscribe = onValue(musicRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        console.log('Music data received:', data);
-        setSyncStatus('connected');
+      console.log('Music state received:', data);
+      
+      if (data && data.updatedBy !== userName) {
+        // Update local state from Firebase
+        setVideoId(data.videoId || '');
+        setVideoTitle(data.videoTitle || '');
+        setIsPlaying(data.isPlaying || false);
+        setCurrentTime(data.currentTime || 0);
+        setVolume(data.volume || 50);
+        setLastSyncTime(data.lastUpdated || 0);
+        setSyncStatus('synced');
         
-        // Update video if different
-        if (data.videoId && data.videoId !== videoId) {
-          console.log('Setting new video:', data.videoId);
-          setVideoId(data.videoId);
-          setVideoTitle(data.videoTitle || 'YouTube Video');
-        }
-        
-        // Improved sync for non-hosts
-        if (!isHost && playerRef.current) {
-          const playerReady = playerRef.current.getPlayerState && playerRef.current.getPlayerState() !== -1;
-          
-          if (playerReady) {
-            // Sync play/pause state
-            if (data.isPlaying !== isPlaying) {
-              console.log('Syncing play state:', data.isPlaying);
-              setIsPlaying(data.isPlaying);
-              
-              if (data.isPlaying) {
-                // First seek to correct time, then play
-                if (data.currentTime) {
-                  playerRef.current.seekTo(data.currentTime, true);
-                }
-                setTimeout(() => {
-                  playerRef.current.playVideo();
-                }, 100);
-              } else {
-                playerRef.current.pauseVideo();
-              }
+        // Sync player if not host
+        if (!isHost && playerRef.current && data.videoId) {
+          const player = playerRef.current.internalPlayer;
+          if (player && typeof player.seekTo === 'function') {
+            if (data.isPlaying) {
+              player.seekTo(data.currentTime || 0);
+              player.playVideo();
+            } else {
+              player.pauseVideo();
+              player.seekTo(data.currentTime || 0);
             }
-            
-            // More aggressive time sync for smooth playback
-            if (data.currentTime && isPlaying) {
-              const timeDiff = Math.abs(data.currentTime - currentTime);
-              if (timeDiff > 2) { // Sync if more than 2 seconds off
-                console.log(`Syncing time: ${currentTime} -> ${data.currentTime} (diff: ${timeDiff}s)`);
-                playerRef.current.seekTo(data.currentTime, true);
-                setCurrentTime(data.currentTime);
-              }
-            }
+            player.setVolume(data.volume || 50);
           }
         }
-        
-        setLastSyncTime(Date.now());
       }
     }, (error) => {
       console.error('Music sync error:', error);
@@ -121,418 +95,337 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     });
 
     return () => unsubscribe();
-  }, [roomId, isHost, videoId, isPlaying, currentTime]);
+  }, [roomId, userName, isHost]);
 
-  // Improved sync function with better timing
-  const syncMusicState = useCallback((vId = videoId, vTitle = videoTitle, forceSync = false) => {
-    if (isHost && roomId && playerRef.current) {
-      setSyncStatus('syncing');
-      const musicRef = ref(database, `rooms/${roomId}/music`);
-      const currentTimeValue = playerRef.current.getCurrentTime() || 0;
-      const currentPlayerState = playerRef.current.getPlayerState();
-      
-      const musicData = {
-        isPlaying: currentPlayerState === 1, // More accurate play state
-        currentTime: currentTimeValue,
-        videoId: vId,
-        videoTitle: vTitle,
-        lastUpdated: Date.now(),
-        updatedBy: userName,
-        forceSync: forceSync,
-        playerState: currentPlayerState
-      };
-      
-      console.log('Syncing music state:', musicData);
-      
-      set(musicRef, musicData)
-        .then(() => {
-          setSyncStatus('connected');
-          setLastSyncTime(Date.now());
-        })
-        .catch(error => {
-          console.error('Error syncing music state:', error);
-          setSyncStatus('error');
-        });
-    }
-  }, [isHost, roomId, videoId, videoTitle, userName]);
-
-  // Continuous sync for host (every 2 seconds when playing)
-  useEffect(() => {
-    if (isHost && isPlaying && playerRef.current) {
-      syncIntervalRef.current = setInterval(() => {
-        const currentState = playerRef.current.getPlayerState();
-        if (currentState === 1) { // Only sync when actually playing
-          syncMusicState();
-        }
-      }, 2000); // Every 2 seconds for smoother sync
-    } else {
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current);
-        syncIntervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current);
-      }
-    };
-  }, [isHost, isPlaying, syncMusicState]);
-
-  // Manual sync function for host
-  const handleManualSync = () => {
-    if (isHost && playerRef.current) {
-      console.log('Manual sync triggered');
-      const currentState = playerRef.current.getPlayerState();
-      setCurrentTime(playerRef.current.getCurrentTime());
-      setIsPlaying(currentState === 1);
-      syncMusicState(videoId, videoTitle, true);
-    }
-  };
-
-  const togglePlay = () => {
-    if (isHost && playerRef.current) {
-      const newIsPlaying = !isPlaying;
-      setIsPlaying(newIsPlaying);
-      
-      if (newIsPlaying) {
-        playerRef.current.playVideo();
-        // Enable background play on first play (mobile)
-        if (isMobile && !backgroundPlayEnabled) {
-          enableBackgroundPlay();
-        }
-      } else {
-        playerRef.current.pauseVideo();
-      }
-      
-      setTimeout(() => syncMusicState(), 100);
-    }
-  };
-
-  const handleYouTubeLink = (e) => {
-    e.preventDefault();
-    if (youtubeLink.trim() && isHost) {
-      const vId = extractVideoId(youtubeLink.trim());
-      if (vId) {
-        console.log('Loading new video:', vId);
-        setVideoId(vId);
-        setVideoTitle('YouTube Video');
-        setYoutubeLink('');
-        setIsPlaying(false);
-        setIsBuffering(true);
-        setTimeout(() => syncMusicState(vId, 'YouTube Video'), 1000);
-      } else {
-        alert('Please enter a valid YouTube URL');
-      }
-    }
-  };
-
+  // YouTube player ready
   const onPlayerReady = (event) => {
+    console.log('YouTube player ready');
     playerRef.current = event.target;
     setDuration(event.target.getDuration());
     event.target.setVolume(volume);
-    setIsBuffering(false);
-    
-    // Mobile optimization
-    if (isMobile) {
-      // Set quality to auto for better performance
-      event.target.setPlaybackQuality('default');
-    }
-    
-    // If host, sync the current state
-    if (isHost) {
-      setTimeout(() => syncMusicState(), 1000);
-    }
+    setSyncStatus('connected');
   };
 
-  const onStateChange = (event) => {
+  // YouTube player state change
+  const onPlayerStateChange = (event) => {
     const state = event.data;
     setPlayerState(state);
     
-    // Handle buffering states
-    if (state === 3) { // buffering
-      setIsBuffering(true);
-    } else {
-      setIsBuffering(false);
-    }
+    console.log('Player state changed:', state);
     
-    if (isHost) {
-      const newIsPlaying = state === 1; // 1 = playing
-      
-      console.log('Player state changed:', state, 'isPlaying:', newIsPlaying);
-      
-      if (newIsPlaying !== isPlaying && state !== 3) { // Don't sync while buffering
-        setIsPlaying(newIsPlaying);
-        setTimeout(() => syncMusicState(), 200); // Faster sync for state changes
+    if (state === 1) { // Playing
+      setIsPlaying(true);
+      setIsBuffering(false);
+      if (isHost) {
+        syncMusicState({
+          videoId,
+          videoTitle,
+          isPlaying: true,
+          currentTime: event.target.getCurrentTime(),
+          volume,
+          duration: event.target.getDuration()
+        });
+      }
+    } else if (state === 2) { // Paused
+      setIsPlaying(false);
+      setIsBuffering(false);
+      if (isHost) {
+        syncMusicState({
+          videoId,
+          videoTitle,
+          isPlaying: false,
+          currentTime: event.target.getCurrentTime(),
+          volume,
+          duration: event.target.getDuration()
+        });
+      }
+    } else if (state === 3) { // Buffering
+      setIsBuffering(true);
+    } else if (state === 0) { // Ended
+      setIsPlaying(false);
+      if (isHost) {
+        syncMusicState({
+          videoId,
+          videoTitle,
+          isPlaying: false,
+          currentTime: 0,
+          volume,
+          duration: event.target.getDuration()
+        });
       }
     }
+  };
+
+  // Handle YouTube link submission
+  const handleSubmitLink = (e) => {
+    e.preventDefault();
+    if (!isHost) return;
     
-    // Handle mobile background play
-    if (isMobile && state === 1) { // Playing
-      enableBackgroundPlay();
+    const extractedVideoId = extractVideoId(youtubeLink);
+    if (extractedVideoId) {
+      setVideoId(extractedVideoId);
+      setVideoTitle('Loading...');
+      setCurrentTime(0);
+      setIsPlaying(false);
+      
+      syncMusicState({
+        videoId: extractedVideoId,
+        videoTitle: 'Loading...',
+        isPlaying: false,
+        currentTime: 0,
+        volume,
+        duration: 0
+      });
+      
+      setYoutubeLink('');
+    } else {
+      alert('Please enter a valid YouTube URL');
     }
   };
 
-  const onPlayerError = (event) => {
-    console.log('YouTube Player Error:', event.data);
-    setIsBuffering(false);
-    setSyncStatus('error');
+  // Play/Pause toggle
+  const togglePlayPause = () => {
+    if (!playerRef.current) return;
     
-    // Handle different error types
-    switch (event.data) {
-      case 2:
-        alert('Invalid video ID - please try another video');
-        break;
-      case 5:
-        alert('HTML5 player error - please refresh and try again');
-        break;
-      case 100:
-        alert('Video not found - please check the URL');
-        break;
-      case 101:
-      case 150:
-        alert('Video cannot be played in embedded players - try another video');
-        break;
-      default:
-        alert('Unknown player error - please refresh and try again');
+    const player = playerRef.current.internalPlayer;
+    if (isPlaying) {
+      player.pauseVideo();
+    } else {
+      player.playVideo();
     }
   };
 
-  const updateTime = useCallback(() => {
-    if (playerRef.current && !isBuffering) {
-      const time = playerRef.current.getCurrentTime();
-      setCurrentTime(time);
-    }
-  }, [isBuffering]);
-
-  // Update time every second
-  useEffect(() => {
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, [updateTime]);
-
-  const formatTime = (time) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
+  // Volume change
   const handleVolumeChange = (e) => {
     const newVolume = parseInt(e.target.value);
     setVolume(newVolume);
+    
     if (playerRef.current) {
-      playerRef.current.setVolume(newVolume);
+      playerRef.current.internalPlayer.setVolume(newVolume);
+    }
+    
+    if (isHost) {
+      syncMusicState({
+        videoId,
+        videoTitle,
+        isPlaying,
+        currentTime: playerRef.current ? playerRef.current.internalPlayer.getCurrentTime() : 0,
+        volume: newVolume,
+        duration
+      });
     }
   };
 
-  return (
-    <div className="glass-effect rounded-2xl p-6 shadow-3d">
-      <div className="text-center mb-6">
-        <h3 className="text-xl font-bold text-white mb-2 flex items-center justify-center space-x-2">
-          <Music className="w-5 h-5" />
-          <span>YouTube Music Player</span>
-          {/* Sync Status Indicator */}
-          <div className="flex items-center space-x-1 text-xs">
-            {syncStatus === 'connected' && <Wifi className="w-3 h-3 text-green-400" />}
-            {syncStatus === 'syncing' && <RefreshCw className="w-3 h-3 text-yellow-400 animate-spin" />}
-            {syncStatus === 'error' && <WifiOff className="w-3 h-3 text-red-400" />}
-            {isMobile && <Smartphone className="w-3 h-3 text-blue-400" />}
-          </div>
-        </h3>
-        {isHost && (
-          <div className="flex items-center justify-center space-x-4">
-            <p className="text-sm text-purple-300">You're the host - control the music!</p>
-            <button
-              onClick={handleManualSync}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs btn-3d transition-all flex items-center space-x-1"
-              title="Manual Sync - Force sync current state to all users"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span>Sync</span>
-            </button>
-          </div>
-        )}
-      </div>
+  // Progress tracking for host
+  useEffect(() => {
+    if (isHost && isPlaying && playerRef.current) {
+      const interval = setInterval(() => {
+        const player = playerRef.current.internalPlayer;
+        if (player && typeof player.getCurrentTime === 'function') {
+          const time = player.getCurrentTime();
+          setCurrentTime(time);
+          
+          // Sync every 5 seconds when playing
+          if (Date.now() - lastSyncTime > 5000) {
+            syncMusicState({
+              videoId,
+              videoTitle,
+              isPlaying: true,
+              currentTime: time,
+              volume,
+              duration
+            });
+            setLastSyncTime(Date.now());
+          }
+        }
+      }, 1000);
+      
+      syncIntervalRef.current = interval;
+      return () => clearInterval(interval);
+    }
+  }, [isHost, isPlaying, videoId, videoTitle, volume, duration, lastSyncTime, syncMusicState]);
 
-      {/* Mobile Background Play Info */}
-      {isMobile && !backgroundPlayEnabled && (
-        <div className="bg-blue-600/20 border border-blue-500/30 rounded-xl p-3 mb-4">
-          <div className="flex items-center space-x-2">
-            <Smartphone className="w-4 h-4 text-blue-400" />
-            <span className="text-blue-300 text-sm">
-              📱 Mobile detected - music will continue in background after first play!
+  // YouTube player options
+  const playerOptions = {
+    height: isMobile ? '200' : '300',
+    width: '100%',
+    playerVars: {
+      autoplay: 0,
+      controls: isHost ? 1 : 0,
+      disablekb: !isHost ? 1 : 0,
+      fs: 1,
+      rel: 0,
+      showinfo: 0,
+      modestbranding: 1,
+      playsinline: 1
+    }
+  };
+
+  // Format time helper
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="glass-effect rounded-2xl p-4 sm:p-6 shadow-3d">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4 sm:mb-6">
+        <div className="flex items-center space-x-2">
+          <Music className="w-5 h-5 text-purple-400" />
+          <h3 className="text-lg sm:text-xl font-bold text-white">Music Player</h3>
+        </div>
+        <div className="flex items-center space-x-2">
+          {/* Sync Status */}
+          <div className="flex items-center space-x-1">
+            {syncStatus === 'connected' ? (
+              <Wifi className="w-4 h-4 text-green-400" />
+            ) : syncStatus === 'error' ? (
+              <WifiOff className="w-4 h-4 text-red-400" />
+            ) : (
+              <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
+            )}
+            <span className="text-xs text-gray-400 hidden sm:inline">
+              {syncStatus === 'connected' ? 'Synced' : syncStatus === 'error' ? 'Error' : 'Syncing'}
             </span>
           </div>
+          {/* Mobile indicator */}
+          {isMobile && <Smartphone className="w-4 h-4 text-blue-400" />}
+          {/* Host indicator */}
+          {isHost && (
+            <div className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-lg text-xs font-medium">
+              Host
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
+      {/* YouTube Link Input (Host Only) */}
       {isHost && (
-        <div className="mb-6">
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              <Link className="w-4 h-4 inline mr-2" />
-              Paste YouTube Link
-            </label>
-            <form onSubmit={handleYouTubeLink} className="flex space-x-2">
+        <form onSubmit={handleSubmitLink} className="mb-6">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1">
               <input
                 type="url"
                 value={youtubeLink}
                 onChange={(e) => setYoutubeLink(e.target.value)}
-                placeholder="Paste YouTube URL here (e.g., https://www.youtube.com/watch?v=...)"
-                className="flex-1 px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                placeholder="Paste YouTube URL here..."
+                className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                required
               />
-              <button
-                type="submit"
-                disabled={!youtubeLink.trim() || isBuffering}
-                className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl btn-3d transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-              >
-                <Link className="w-4 h-4" />
-                <span>Play</span>
-              </button>
-            </form>
+            </div>
+            <button
+              type="submit"
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 sm:px-6 py-3 rounded-xl btn-3d transition-all flex items-center justify-center space-x-2 text-sm sm:text-base"
+            >
+              <Link className="w-4 h-4" />
+              <span className="hidden sm:inline">Load</span>
+            </button>
           </div>
-          
-          <div className="bg-blue-600/20 border border-blue-500/30 rounded-xl p-3">
-            <p className="text-sm text-blue-300">
-              💡 <strong>How to use:</strong> Go to YouTube, find your song, copy the URL and paste it here. Use the Sync button if users get out of sync!
-            </p>
-          </div>
-        </div>
+        </form>
       )}
 
-      {/* Buffering indicator */}
-      {isBuffering && (
-        <div className="bg-yellow-600/20 border border-yellow-500/30 rounded-xl p-3 mb-4">
-          <div className="flex items-center space-x-2">
-            <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />
-            <span className="text-yellow-300 text-sm">Loading video...</span>
-          </div>
-        </div>
-      )}
-
-      {videoId && (
-        <div className="space-y-4">
-          {/* YouTube Player */}
-          <div className="bg-black rounded-xl overflow-hidden">
+      {/* Video Player */}
+      {videoId ? (
+        <div className="mb-6">
+          <div className="youtube-container">
             <YouTube
               videoId={videoId}
-              opts={{
-                width: '100%',
-                height: isMobile ? '200' : '240',
-                playerVars: {
-                  autoplay: 0,
-                  controls: isHost ? 1 : 0,
-                  disablekb: !isHost ? 1 : 0,
-                  fs: 0,
-                  rel: 0,
-                  showinfo: 0,
-                  iv_load_policy: 3,
-                  modestbranding: 1,
-                  origin: window.location.origin,
-                  enablejsapi: 1,
-                  playsinline: 1,
-                  // Mobile optimizations
-                  html5: 1,
-                  wmode: 'transparent'
-                }
-              }}
+              opts={playerOptions}
               onReady={onPlayerReady}
-              onStateChange={onStateChange}
-              onError={onPlayerError}
-              loading="lazy"
+              onStateChange={onPlayerStateChange}
+              onEnd={() => setIsPlaying(false)}
+              onError={(error) => {
+                console.error('YouTube player error:', error);
+                setSyncStatus('error');
+              }}
             />
           </div>
-
+          
           {/* Video Info */}
-          <div className="bg-gray-800/30 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-white font-medium truncate flex-1">
+          {videoTitle && videoTitle !== 'Loading...' && (
+            <div className="mt-3 text-center">
+              <p className="text-white font-medium text-sm sm:text-base truncate">
                 {videoTitle}
               </p>
-              {/* Player state indicator */}
-              <div className="text-xs text-gray-400">
-                {isBuffering && <span className="text-yellow-400">Buffering...</span>}
-                {playerState === 1 && !isBuffering && <span className="text-green-400">Playing</span>}
-                {playerState === 2 && !isBuffering && <span className="text-gray-400">Paused</span>}
-                {playerState === 5 && <span className="text-blue-400">Ready</span>}
-                {isMobile && backgroundPlayEnabled && <span className="text-blue-400 ml-2">📱BG</span>}
-              </div>
             </div>
-            
-            {/* Controls */}
-            <div className="flex items-center justify-center space-x-4 mb-4">
+          )}
+        </div>
+      ) : (
+        <div className="mb-6 bg-gray-800/30 rounded-xl p-8 sm:p-12 text-center border-2 border-dashed border-gray-600">
+          <Music className="w-12 h-12 sm:w-16 sm:h-16 text-gray-500 mx-auto mb-4" />
+          <p className="text-gray-400 text-sm sm:text-base">
+            {isHost ? 'Paste a YouTube URL above to start playing music' : 'Waiting for host to select music...'}
+          </p>
+        </div>
+      )}
+
+      {/* Controls */}
+      {videoId && (
+        <div className="space-y-4">
+          {/* Play/Pause Button */}
+          {(isHost || playerState !== -1) && (
+            <div className="flex items-center justify-center">
               <button
-                onClick={togglePlay}
-                disabled={!isHost || isBuffering}
-                className={`p-3 rounded-full transition-all ${
-                  isHost && !isBuffering
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white btn-3d' 
-                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                onClick={togglePlayPause}
+                disabled={!isHost}
+                className={`p-3 sm:p-4 rounded-full btn-3d transition-all ${
+                  isHost 
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                    : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
               >
                 {isBuffering ? (
-                  <RefreshCw className="w-6 h-6 animate-spin" />
+                  <RefreshCw className="w-6 h-6 sm:w-8 sm:h-8 animate-spin" />
                 ) : isPlaying ? (
-                  <Pause className="w-6 h-6" />
+                  <Pause className="w-6 h-6 sm:w-8 sm:h-8" />
                 ) : (
-                  <Play className="w-6 h-6" />
+                  <Play className="w-6 h-6 sm:w-8 sm:h-8" />
                 )}
               </button>
             </div>
+          )}
 
-            {/* Progress Bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm text-gray-400">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2">
+          {/* Progress Bar */}
+          {duration > 0 && (
+            <div className="flex items-center space-x-2 text-sm text-gray-400">
+              <span className="text-xs">{formatTime(currentTime)}</span>
+              <div className="flex-1 bg-gray-700 rounded-full h-2">
                 <div
-                  className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
-                  style={{ width: `${(currentTime / duration) * 100 || 0}%` }}
+                  className="bg-purple-600 h-2 rounded-full transition-all duration-1000"
+                  style={{ width: `${(currentTime / duration) * 100}%` }}
                 ></div>
               </div>
+              <span className="text-xs">{formatTime(duration)}</span>
             </div>
+          )}
 
-            {/* Volume Control */}
-            <div className="flex items-center space-x-2 mt-4">
-              <Volume2 className="w-4 h-4 text-gray-400" />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={volume}
-                onChange={handleVolumeChange}
-                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              />
-              <span className="text-xs text-gray-400 w-8">{volume}%</span>
-            </div>
-
-            {/* Sync Status */}
-            <div className="mt-3 text-xs text-center">
-              <span className={`${
-                syncStatus === 'connected' ? 'text-green-400' :
-                syncStatus === 'syncing' ? 'text-yellow-400' : 'text-red-400'
-              }`}>
-                {syncStatus === 'connected' && `Last sync: ${Math.floor((Date.now() - lastSyncTime) / 1000)}s ago`}
-                {syncStatus === 'syncing' && 'Syncing...'}
-                {syncStatus === 'error' && 'Sync error - check connection'}
-              </span>
-              {isMobile && (
-                <div className="text-blue-400 mt-1">
-                  📱 Mobile mode {backgroundPlayEnabled ? '(Background enabled)' : '(Tap play to enable background)'}
-                </div>
-              )}
-            </div>
+          {/* Volume Control */}
+          <div className="flex items-center space-x-3">
+            <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={volume}
+              onChange={handleVolumeChange}
+              className="flex-1"
+              disabled={!isHost}
+            />
+            <span className="text-xs sm:text-sm text-gray-400 w-8 text-right">
+              {volume}%
+            </span>
           </div>
-        </div>
-      )}
 
-      {!videoId && (
-        <div className="text-center py-8 text-gray-400">
-          <Music className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>No music selected</p>
-          {isHost && <p className="text-sm">Paste a YouTube link to get started</p>}
+          {/* Non-host notice */}
+          {!isHost && (
+            <div className="bg-blue-600/10 border border-blue-500/20 rounded-xl p-3">
+              <p className="text-xs sm:text-sm text-blue-300 text-center">
+                🎵 Music is controlled by the room host
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
