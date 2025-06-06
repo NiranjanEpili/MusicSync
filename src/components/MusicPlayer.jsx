@@ -23,6 +23,8 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
   const [isAppInBackground, setIsAppInBackground] = useState(false);
   const [wasPlayingBeforeBackground, setWasPlayingBeforeBackground] = useState(false);
   const [mobilePlaybackMode, setMobilePlaybackMode] = useState('normal'); // 'normal', 'background'
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [previousVideoId, setPreviousVideoId] = useState('');
 
   // Detect mobile device
   useEffect(() => {
@@ -115,6 +117,34 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     checkMobile();
   }, [isPlaying, wasPlayingBeforeBackground]);
 
+  // Enhanced video switching effect
+  useEffect(() => {
+    if (videoId && videoId !== previousVideoId && playerRef.current) {
+      console.log('Video ID changed from', previousVideoId, 'to', videoId);
+      setIsVideoLoading(true);
+      setPreviousVideoId(videoId);
+      
+      // Force YouTube player to load new video
+      const player = playerRef.current.internalPlayer;
+      if (player && typeof player.loadVideoById === 'function') {
+        try {
+          console.log('Loading new video:', videoId);
+          player.loadVideoById(videoId, 0); // Load from beginning
+          player.setVolume(volume);
+          
+          // Reset states for new video
+          setCurrentTime(0);
+          setDuration(0);
+          setIsPlaying(false);
+          setIsBuffering(false);
+          
+        } catch (error) {
+          console.error('Error loading new video:', error);
+        }
+      }
+    }
+  }, [videoId, previousVideoId, volume]);
+
   // Extract YouTube video ID from URL
   const extractVideoId = (url) => {
     const regex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/;
@@ -151,8 +181,17 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       console.log('Music state received:', data);
       
       if (data && data.updatedBy !== userName) {
+        const newVideoId = data.videoId || '';
+        const currentVideoId = videoId;
+        
+        // Check if video changed
+        if (newVideoId !== currentVideoId) {
+          console.log('Detected video change from Firebase:', currentVideoId, '->', newVideoId);
+          setIsVideoLoading(true);
+        }
+        
         // Update local state from Firebase
-        setVideoId(data.videoId || '');
+        setVideoId(newVideoId);
         setVideoTitle(data.videoTitle || '');
         setIsPlaying(data.isPlaying || false);
         setCurrentTime(data.currentTime || 0);
@@ -160,26 +199,34 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
         setLastSyncTime(data.lastUpdated || 0);
         setSyncStatus('synced');
         
-        // Enhanced sync for non-host with background handling
-        if (!isHost && playerRef.current && data.videoId) {
+        // Enhanced sync for non-host with video switching
+        if (!isHost && playerRef.current && newVideoId) {
           const player = playerRef.current.internalPlayer;
-          if (player && typeof player.seekTo === 'function') {
+          if (player && typeof player.loadVideoById === 'function') {
             const syncPlayback = () => {
               try {
-                if (data.isPlaying) {
-                  player.seekTo(data.currentTime || 0);
-                  player.playVideo();
-                  
-                  // Force playback even in background for mobile
-                  if (isMobile && document.hidden) {
-                    setTimeout(() => {
-                      player.playVideo();
-                    }, 100);
-                  }
+                // If video changed, load the new video
+                if (newVideoId !== currentVideoId) {
+                  console.log('Loading new video for guest:', newVideoId);
+                  player.loadVideoById(newVideoId, data.currentTime || 0);
                 } else {
-                  player.pauseVideo();
-                  player.seekTo(data.currentTime || 0);
+                  // Same video, just sync position and state
+                  if (data.isPlaying) {
+                    player.seekTo(data.currentTime || 0);
+                    player.playVideo();
+                    
+                    // Force playback even in background for mobile
+                    if (isMobile && document.hidden) {
+                      setTimeout(() => {
+                        player.playVideo();
+                      }, 100);
+                    }
+                  } else {
+                    player.pauseVideo();
+                    player.seekTo(data.currentTime || 0);
+                  }
                 }
+                
                 player.setVolume(data.volume || 50);
               } catch (error) {
                 console.log('Sync playback error:', error);
@@ -203,19 +250,25 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     });
 
     return () => unsubscribe();
-  }, [roomId, userName, isHost, isMobile]);
+  }, [roomId, userName, isHost, isMobile, videoId]);
 
   // YouTube player ready
   const onPlayerReady = (event) => {
     console.log('YouTube player ready');
     playerRef.current = event.target;
-    setDuration(event.target.getDuration());
+    
+    // Get initial duration and set volume
+    const initialDuration = event.target.getDuration();
+    if (initialDuration > 0) {
+      setDuration(initialDuration);
+    }
+    
     event.target.setVolume(volume);
     setSyncStatus('connected');
+    setIsVideoLoading(false);
 
     // Mobile-specific optimizations
     if (isMobile) {
-      // Enable background playback attributes
       const iframe = event.target.getIframe();
       if (iframe) {
         iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
@@ -224,12 +277,23 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     }
   };
 
-  // YouTube player state change
+  // Enhanced state change handler with video loading detection
   const onPlayerStateChange = (event) => {
     const state = event.data;
     setPlayerState(state);
     
     console.log('Player state changed:', state, 'Background:', isAppInBackground);
+    
+    // Handle video loading completion
+    if (state === 1 || state === 2) { // Playing or Paused
+      setIsVideoLoading(false);
+      
+      // Update duration when video loads
+      const newDuration = event.target.getDuration();
+      if (newDuration > 0 && newDuration !== duration) {
+        setDuration(newDuration);
+      }
+    }
     
     // Handle automatic pause prevention on mobile
     if (isMobile && state === 2 && isAppInBackground && wasPlayingBeforeBackground) {
@@ -262,7 +326,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     } else if (state === 2) { // Paused
       setIsPlaying(false);
       setIsBuffering(false);
-      if (isHost && !isAppInBackground) { // Don't sync pauses from background
+      if (isHost && !isAppInBackground) {
         syncMusicState({
           videoId,
           videoTitle,
@@ -286,21 +350,35 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
           duration: event.target.getDuration()
         });
       }
+    } else if (state === 5) { // Video cued (loaded but not started)
+      setIsVideoLoading(false);
+      setIsBuffering(false);
     }
   };
 
-  // Handle YouTube link submission
+  // Enhanced YouTube link submission with proper cleanup
   const handleSubmitLink = (e) => {
     e.preventDefault();
     if (!isHost) return;
     
     const extractedVideoId = extractVideoId(youtubeLink);
     if (extractedVideoId) {
+      console.log('Submitting new video:', extractedVideoId);
+      
+      // Clear previous video state
+      setIsVideoLoading(true);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
+      setIsBuffering(false);
+      setPlayerState(-1);
+      
+      // Set new video data
       setVideoId(extractedVideoId);
       setVideoTitle('Loading...');
-      setCurrentTime(0);
-      setIsPlaying(false);
+      setPreviousVideoId(videoId); // Store previous video ID
       
+      // Sync new video to Firebase
       syncMusicState({
         videoId: extractedVideoId,
         videoTitle: 'Loading...',
@@ -316,9 +394,9 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     }
   };
 
-  // Play/Pause toggle
+  // Enhanced play/pause with video loading check
   const togglePlayPause = () => {
-    if (!playerRef.current) return;
+    if (!playerRef.current || isVideoLoading) return;
     
     const player = playerRef.current.internalPlayer;
     if (isPlaying) {
@@ -358,7 +436,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
 
   // Progress tracking for host
   useEffect(() => {
-    if (isHost && isPlaying && playerRef.current) {
+    if (isHost && isPlaying && playerRef.current && !isVideoLoading) {
       const interval = setInterval(() => {
         const player = playerRef.current.internalPlayer;
         if (player && typeof player.getCurrentTime === 'function') {
@@ -388,9 +466,9 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       syncIntervalRef.current = interval;
       return () => clearInterval(interval);
     }
-  }, [isHost, isPlaying, videoId, videoTitle, volume, duration, lastSyncTime, syncMusicState, isAppInBackground]);
+  }, [isHost, isPlaying, videoId, videoTitle, volume, duration, lastSyncTime, syncMusicState, isAppInBackground, isVideoLoading]);
 
-  // YouTube player options
+  // Enhanced player options with better video switching
   const playerOptions = {
     height: isMobile ? '200' : '300',
     width: '100%',
@@ -403,10 +481,8 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       showinfo: 0,
       modestbranding: 1,
       playsinline: 1,
-      // Enhanced mobile support
       enablejsapi: 1,
       origin: window.location.origin,
-      // Background playback hints
       iv_load_policy: 3,
       cc_load_policy: 0
     }
@@ -421,11 +497,16 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
 
   return (
     <div className="glass-effect rounded-2xl p-4 sm:p-6 shadow-3d">
-      {/* Header with background status */}
+      {/* Header with loading indicator */}
       <div className="flex items-center justify-between mb-4 sm:mb-6">
         <div className="flex items-center space-x-2">
           <Music className="w-5 h-5 text-purple-400" />
           <h3 className="text-lg sm:text-xl font-bold text-white">Music Player</h3>
+          {isVideoLoading && (
+            <div className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-lg text-xs font-medium">
+              Loading...
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-2">
           {/* Background playback indicator */}
@@ -467,7 +548,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
         </div>
       )}
 
-      {/* YouTube Link Input (Host Only) */}
+      {/* Enhanced YouTube Link Input with loading state */}
       {isHost && (
         <form onSubmit={handleSubmitLink} className="mb-6">
           <div className="flex flex-col sm:flex-row gap-2">
@@ -479,24 +560,33 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
                 placeholder="Paste YouTube URL here..."
                 className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                 required
+                disabled={isVideoLoading}
               />
             </div>
             <button
               type="submit"
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 sm:px-6 py-3 rounded-xl btn-3d transition-all flex items-center justify-center space-x-2 text-sm sm:text-base"
+              disabled={isVideoLoading}
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 sm:px-6 py-3 rounded-xl btn-3d transition-all flex items-center justify-center space-x-2 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Link className="w-4 h-4" />
-              <span className="hidden sm:inline">Load</span>
+              {isVideoLoading ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Link className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">
+                {isVideoLoading ? 'Loading...' : 'Load'}
+              </span>
             </button>
           </div>
         </form>
       )}
 
-      {/* Enhanced Video Player with background support */}
+      {/* Enhanced Video Player with loading overlay */}
       {videoId ? (
-        <div className="mb-6">
+        <div className="mb-6 relative">
           <div className="youtube-container">
             <YouTube
+              key={videoId} // Force re-render when video changes
               videoId={videoId}
               opts={playerOptions}
               onReady={onPlayerReady}
@@ -505,12 +595,23 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
               onError={(error) => {
                 console.error('YouTube player error:', error);
                 setSyncStatus('error');
+                setIsVideoLoading(false);
               }}
             />
+            
+            {/* Loading overlay */}
+            {isVideoLoading && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-xl">
+                <div className="text-white text-center">
+                  <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                  <p className="text-sm">Loading new video...</p>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Video Info */}
-          {videoTitle && videoTitle !== 'Loading...' && (
+          {videoTitle && videoTitle !== 'Loading...' && !isVideoLoading && (
             <div className="mt-3 text-center">
               <p className="text-white font-medium text-sm sm:text-base truncate">
                 {videoTitle}
@@ -527,7 +628,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
         </div>
       )}
 
-      {/* Controls */}
+      {/* Enhanced Controls with loading state */}
       {videoId && (
         <div className="space-y-4">
           {/* Play/Pause Button */}
@@ -535,14 +636,14 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
             <div className="flex items-center justify-center">
               <button
                 onClick={togglePlayPause}
-                disabled={!isHost}
+                disabled={!isHost || isVideoLoading}
                 className={`p-3 sm:p-4 rounded-full btn-3d transition-all ${
-                  isHost 
+                  isHost && !isVideoLoading
                     ? 'bg-purple-600 hover:bg-purple-700 text-white' 
                     : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                {isBuffering ? (
+                {isVideoLoading || isBuffering ? (
                   <RefreshCw className="w-6 h-6 sm:w-8 sm:h-8 animate-spin" />
                 ) : isPlaying ? (
                   <Pause className="w-6 h-6 sm:w-8 sm:h-8" />
@@ -553,8 +654,8 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
             </div>
           )}
 
-          {/* Progress Bar */}
-          {duration > 0 && (
+          {/* Progress Bar - only show when video is properly loaded */}
+          {duration > 0 && !isVideoLoading && (
             <div className="flex items-center space-x-2 text-sm text-gray-400">
               <span className="text-xs">{formatTime(currentTime)}</span>
               <div className="flex-1 bg-gray-700 rounded-full h-2">
@@ -577,15 +678,24 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
               value={volume}
               onChange={handleVolumeChange}
               className="flex-1"
-              disabled={!isHost}
+              disabled={!isHost || isVideoLoading}
             />
             <span className="text-xs sm:text-sm text-gray-400 w-8 text-right">
               {volume}%
             </span>
           </div>
 
+          {/* Loading notice */}
+          {isVideoLoading && (
+            <div className="bg-yellow-600/10 border border-yellow-500/20 rounded-xl p-3">
+              <p className="text-xs sm:text-sm text-yellow-300 text-center">
+                🔄 Loading new video... Please wait
+              </p>
+            </div>
+          )}
+
           {/* Non-host notice */}
-          {!isHost && (
+          {!isHost && !isVideoLoading && (
             <div className="bg-blue-600/10 border border-blue-500/20 rounded-xl p-3">
               <p className="text-xs sm:text-sm text-blue-300 text-center">
                 🎵 Music is controlled by the room host
