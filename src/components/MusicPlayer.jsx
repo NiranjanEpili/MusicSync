@@ -26,16 +26,22 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     
     const unsubscribe = onValue(musicRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && !isHost) {
-        // Sync for non-host users
-        if (data.videoId !== videoId) {
+      if (data) {
+        console.log('Music data received:', data);
+        
+        // Update video if different
+        if (data.videoId && data.videoId !== videoId) {
+          console.log('Setting new video:', data.videoId);
           setVideoId(data.videoId);
           setVideoTitle(data.videoTitle || 'YouTube Video');
         }
         
-        if (data.isPlaying !== isPlaying) {
-          setIsPlaying(data.isPlaying);
-          if (playerRef.current) {
+        // Sync playback state for non-hosts
+        if (!isHost && playerRef.current) {
+          if (data.isPlaying !== isPlaying) {
+            console.log('Syncing play state:', data.isPlaying);
+            setIsPlaying(data.isPlaying);
+            
             if (data.isPlaying) {
               playerRef.current.playVideo();
               if (data.currentTime) {
@@ -45,32 +51,41 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
               playerRef.current.pauseVideo();
             }
           }
-        }
-        
-        // Sync time periodically
-        if (data.currentTime && Math.abs(data.currentTime - currentTime) > 3) {
-          playerRef.current?.seekTo(data.currentTime, true);
-          setCurrentTime(data.currentTime);
+          
+          // Sync time if there's a significant difference
+          if (data.currentTime && Math.abs(data.currentTime - currentTime) > 2) {
+            console.log('Syncing time:', data.currentTime);
+            playerRef.current.seekTo(data.currentTime, true);
+            setCurrentTime(data.currentTime);
+          }
         }
       }
     });
 
     return () => unsubscribe();
-  }, [roomId, isHost, isPlaying, currentTime, videoId]);
+  }, [roomId, isHost, videoId, isPlaying, currentTime]);
 
-  const syncMusicState = (vId = videoId, vTitle = videoTitle) => {
-    if (isHost && playerRef.current) {
+  const syncMusicState = useCallback((vId = videoId, vTitle = videoTitle) => {
+    if (isHost && roomId) {
       const musicRef = ref(database, `rooms/${roomId}/music`);
-      set(musicRef, {
+      const currentTimeValue = playerRef.current ? playerRef.current.getCurrentTime() : 0;
+      
+      const musicData = {
         isPlaying,
-        currentTime: playerRef.current.getCurrentTime() || 0,
+        currentTime: currentTimeValue,
         videoId: vId,
         videoTitle: vTitle,
         lastUpdated: Date.now(),
         updatedBy: userName
+      };
+      
+      console.log('Syncing music state:', musicData);
+      
+      set(musicRef, musicData).catch(error => {
+        console.error('Error syncing music state:', error);
       });
     }
-  };
+  }, [isHost, roomId, isPlaying, videoId, videoTitle, userName]);
 
   const togglePlay = () => {
     if (isHost && playerRef.current) {
@@ -92,10 +107,12 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     if (youtubeLink.trim() && isHost) {
       const vId = extractVideoId(youtubeLink.trim());
       if (vId) {
+        console.log('Loading new video:', vId);
         setVideoId(vId);
         setVideoTitle('YouTube Video');
         setYoutubeLink('');
-        syncMusicState(vId, 'YouTube Video');
+        setIsPlaying(false);
+        setTimeout(() => syncMusicState(vId, 'YouTube Video'), 1000);
       } else {
         alert('Please enter a valid YouTube URL');
       }
@@ -106,6 +123,11 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     playerRef.current = event.target;
     setDuration(event.target.getDuration());
     event.target.setVolume(volume);
+    
+    // If host, sync the current state
+    if (isHost) {
+      setTimeout(() => syncMusicState(), 1000);
+    }
   };
 
   const onStateChange = (event) => {
@@ -113,9 +135,11 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       const playerState = event.data;
       const newIsPlaying = playerState === 1; // 1 = playing
       
+      console.log('Player state changed:', playerState, 'isPlaying:', newIsPlaying);
+      
       if (newIsPlaying !== isPlaying) {
         setIsPlaying(newIsPlaying);
-        setTimeout(() => syncMusicState(), 100);
+        setTimeout(() => syncMusicState(), 500);
       }
     }
   };
@@ -149,19 +173,10 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       
       // Sync every 5 seconds
       if (Math.floor(time) % 5 === 0) {
-        // Inline sync to avoid dependency issues
-        const musicRef = ref(database, `rooms/${roomId}/music`);
-        set(musicRef, {
-          isPlaying,
-          currentTime: time,
-          videoId,
-          videoTitle,
-          lastUpdated: Date.now(),
-          updatedBy: userName
-        });
+        syncMusicState();
       }
     }
-  }, [isHost, roomId, isPlaying, videoId, videoTitle, userName]);
+  }, [isHost, syncMusicState]);
 
   // Update time every second
   useEffect(() => {

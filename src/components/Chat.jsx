@@ -13,12 +13,18 @@ const Chat = ({ roomId, userName }) => {
     
     const unsubscribe = onValue(messagesRef, (snapshot) => {
       const data = snapshot.val();
+      console.log('Chat data received:', data);
+      
       if (data) {
         const messagesList = Object.entries(data)
           .map(([key, value]) => ({ id: key, ...value }))
-          .sort((a, b) => a.timestamp - b.timestamp);
+          .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         setMessages(messagesList);
+      } else {
+        setMessages([]);
       }
+    }, (error) => {
+      console.error('Chat sync error:', error);
     });
 
     return () => unsubscribe();
@@ -32,12 +38,23 @@ const Chat = ({ roomId, userName }) => {
     e.preventDefault();
     if (newMessage.trim()) {
       const messagesRef = ref(database, `rooms/${roomId}/messages`);
-      push(messagesRef, {
+      const messageData = {
         text: newMessage.trim(),
         sender: userName,
-        timestamp: serverTimestamp()
-      });
-      setNewMessage('');
+        timestamp: Date.now() // Use client timestamp for better compatibility
+      };
+      
+      console.log('Sending message:', messageData);
+      
+      push(messagesRef, messageData)
+        .then(() => {
+          console.log('Message sent successfully');
+          setNewMessage('');
+        })
+        .catch(error => {
+          console.error('Error sending message:', error);
+          alert('Failed to send message. Please try again.');
+        });
     }
   };
 

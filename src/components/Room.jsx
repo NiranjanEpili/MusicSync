@@ -8,6 +8,7 @@ import Chat from './Chat';
 const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
   const [connectedUsers, setConnectedUsers] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
 
   // Copy room code to clipboard
   const copyRoomCode = async () => {
@@ -39,37 +40,46 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
       joinedAt: Date.now()
     };
     
-    set(userRef, userData);
+    console.log('Adding user to room:', userData);
+    
+    set(userRef, userData)
+      .then(() => {
+        console.log('User added successfully');
+        setConnectionStatus('connected');
+      })
+      .catch(error => {
+        console.error('Error adding user:', error);
+        setConnectionStatus('error');
+      });
 
     // Set up automatic cleanup when user disconnects
     onDisconnect(userRef).remove();
 
-    // Listen for connected users and cleanup empty rooms
+    // Listen for connected users
     const unsubscribe = onValue(usersRef, (snapshot) => {
       const data = snapshot.val();
+      console.log('Users data received:', data);
+      
       if (data) {
         const usersList = Object.values(data);
         setConnectedUsers(usersList);
+        setConnectionStatus('connected');
       } else {
-        // No users left - delete the entire room
         setConnectedUsers([]);
         console.log(`Room ${roomId} is empty, deleting...`);
-        // Use a more reliable cleanup method
         setTimeout(() => {
-          remove(roomRef).then(() => {
-            console.log(`Room ${roomId} deleted successfully`);
-          }).catch(err => {
-            console.log('Room deletion error (this is normal):', err.message);
+          remove(roomRef).catch(err => {
+            console.log('Room deletion error (normal):', err.message);
           });
         }, 1000);
       }
+    }, (error) => {
+      console.error('Users sync error:', error);
+      setConnectionStatus('error');
     });
 
-    // Cleanup function when component unmounts
     return () => {
       unsubscribe();
-      
-      // Simple cleanup - just remove the user
       remove(userRef).catch(err => {
         console.log('User removal error:', err.message);
       });
@@ -113,6 +123,17 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
               </div>
               
               <div className="flex items-center space-x-4 text-gray-300">
+                {/* Connection Status */}
+                <div className="flex items-center space-x-1">
+                  <div className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected' ? 'bg-green-400' : 
+                    connectionStatus === 'error' ? 'bg-red-400' : 'bg-yellow-400'
+                  }`}></div>
+                  <span className="text-sm">
+                    {connectionStatus === 'connected' ? 'Connected' : 
+                     connectionStatus === 'error' ? 'Connection Error' : 'Connecting...'}
+                  </span>
+                </div>
                 <div className="flex items-center space-x-1">
                   <Users className="w-4 h-4" />
                   <span>{connectedUsers.length} connected</span>

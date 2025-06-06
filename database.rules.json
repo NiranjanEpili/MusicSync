@@ -1,22 +1,28 @@
 {
   "rules": {
+    ".read": "auth == null",
+    ".write": "auth == null",
     "rooms": {
       "$roomId": {
         ".read": true,
         ".write": true,
-        ".validate": "newData.hasChildren() || !data.exists()",
         "users": {
           "$userId": {
-            ".validate": "newData.hasChildren(['name', 'isHost', 'joinedAt']) || !newData.exists()"
+            ".read": true,
+            ".write": true
           }
         },
         "messages": {
+          ".read": true,
+          ".write": true,
           "$messageId": {
-            ".validate": "newData.hasChildren(['text', 'sender', 'timestamp']) || !newData.exists()"
+            ".read": true,
+            ".write": true
           }
         },
         "music": {
-          ".validate": "newData.hasChildren(['isPlaying', 'currentTime']) || !newData.exists()"
+          ".read": true,
+          ".write": true
         }
       }
     }
