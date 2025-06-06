@@ -20,15 +20,100 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
   const [syncStatus, setSyncStatus] = useState('connected');
   const [isMobile, setIsMobile] = useState(false);
   const [backgroundPlayEnabled, setBackgroundPlayEnabled] = useState(false);
+  const [isAppInBackground, setIsAppInBackground] = useState(false);
+  const [wasPlayingBeforeBackground, setWasPlayingBeforeBackground] = useState(false);
+  const [mobilePlaybackMode, setMobilePlaybackMode] = useState('normal'); // 'normal', 'background'
 
   // Detect mobile device
   useEffect(() => {
     const checkMobile = () => {
       const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       setIsMobile(isMobileDevice);
+      
+      if (isMobileDevice) {
+        // Enable background playback for mobile
+        setBackgroundPlayEnabled(true);
+        
+        // Add mobile-specific event listeners
+        const handleVisibilityChange = () => {
+          if (document.hidden) {
+            console.log('App went to background');
+            setIsAppInBackground(true);
+            setWasPlayingBeforeBackground(isPlaying);
+            
+            // Try to keep playing in background
+            if (isPlaying && playerRef.current) {
+              setTimeout(() => {
+                const player = playerRef.current.internalPlayer;
+                if (player && typeof player.playVideo === 'function') {
+                  console.log('Attempting to resume playback in background');
+                  player.playVideo();
+                }
+              }, 100);
+            }
+          } else {
+            console.log('App came to foreground');
+            setIsAppInBackground(false);
+            
+            // Resume playback if it was playing before background
+            if (wasPlayingBeforeBackground && playerRef.current) {
+              setTimeout(() => {
+                const player = playerRef.current.internalPlayer;
+                if (player && typeof player.playVideo === 'function') {
+                  console.log('Resuming playback after foreground');
+                  player.playVideo();
+                }
+              }, 500);
+            }
+          }
+        };
+
+        const handlePageHide = () => {
+          console.log('Page hide - saving playback state');
+          setWasPlayingBeforeBackground(isPlaying);
+        };
+
+        const handlePageShow = (event) => {
+          console.log('Page show - restoring playback state');
+          if (event.persisted && wasPlayingBeforeBackground && playerRef.current) {
+            setTimeout(() => {
+              const player = playerRef.current.internalPlayer;
+              if (player && typeof player.playVideo === 'function') {
+                player.playVideo();
+              }
+            }, 300);
+          }
+        };
+
+        // iOS Safari specific handling
+        const handleFocusIn = () => {
+          if (wasPlayingBeforeBackground && playerRef.current) {
+            setTimeout(() => {
+              const player = playerRef.current.internalPlayer;
+              if (player && typeof player.playVideo === 'function') {
+                console.log('Focus restored - resuming playback');
+                player.playVideo();
+              }
+            }, 200);
+          }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', handlePageHide);
+        window.addEventListener('pageshow', handlePageShow);
+        window.addEventListener('focus', handleFocusIn);
+
+        return () => {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('pagehide', handlePageHide);
+          window.removeEventListener('pageshow', handlePageShow);
+          window.removeEventListener('focus', handleFocusIn);
+        };
+      }
     };
+    
     checkMobile();
-  }, []);
+  }, [isPlaying, wasPlayingBeforeBackground]);
 
   // Extract YouTube video ID from URL
   const extractVideoId = (url) => {
@@ -45,7 +130,8 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     const syncData = {
       ...state,
       lastUpdated: Date.now(),
-      updatedBy: userName
+      updatedBy: userName,
+      backgroundPlayback: isAppInBackground
     };
     
     console.log('Syncing music state:', syncData);
@@ -54,7 +140,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       console.error('Error syncing music state:', error);
       setSyncStatus('error');
     });
-  }, [roomId, isHost, userName]);
+  }, [roomId, isHost, userName, isAppInBackground]);
 
   // Listen for music state changes from Firebase
   useEffect(() => {
@@ -74,18 +160,40 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
         setLastSyncTime(data.lastUpdated || 0);
         setSyncStatus('synced');
         
-        // Sync player if not host
+        // Enhanced sync for non-host with background handling
         if (!isHost && playerRef.current && data.videoId) {
           const player = playerRef.current.internalPlayer;
           if (player && typeof player.seekTo === 'function') {
-            if (data.isPlaying) {
-              player.seekTo(data.currentTime || 0);
-              player.playVideo();
-            } else {
-              player.pauseVideo();
-              player.seekTo(data.currentTime || 0);
+            const syncPlayback = () => {
+              try {
+                if (data.isPlaying) {
+                  player.seekTo(data.currentTime || 0);
+                  player.playVideo();
+                  
+                  // Force playback even in background for mobile
+                  if (isMobile && document.hidden) {
+                    setTimeout(() => {
+                      player.playVideo();
+                    }, 100);
+                  }
+                } else {
+                  player.pauseVideo();
+                  player.seekTo(data.currentTime || 0);
+                }
+                player.setVolume(data.volume || 50);
+              } catch (error) {
+                console.log('Sync playback error:', error);
+              }
+            };
+
+            // Immediate sync
+            syncPlayback();
+            
+            // Retry sync for mobile reliability
+            if (isMobile && data.isPlaying) {
+              setTimeout(syncPlayback, 200);
+              setTimeout(syncPlayback, 500);
             }
-            player.setVolume(data.volume || 50);
           }
         }
       }
@@ -95,7 +203,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     });
 
     return () => unsubscribe();
-  }, [roomId, userName, isHost]);
+  }, [roomId, userName, isHost, isMobile]);
 
   // YouTube player ready
   const onPlayerReady = (event) => {
@@ -104,6 +212,16 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     setDuration(event.target.getDuration());
     event.target.setVolume(volume);
     setSyncStatus('connected');
+
+    // Mobile-specific optimizations
+    if (isMobile) {
+      // Enable background playback attributes
+      const iframe = event.target.getIframe();
+      if (iframe) {
+        iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture');
+        iframe.setAttribute('allowfullscreen', 'true');
+      }
+    }
   };
 
   // YouTube player state change
@@ -111,7 +229,22 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     const state = event.data;
     setPlayerState(state);
     
-    console.log('Player state changed:', state);
+    console.log('Player state changed:', state, 'Background:', isAppInBackground);
+    
+    // Handle automatic pause prevention on mobile
+    if (isMobile && state === 2 && isAppInBackground && wasPlayingBeforeBackground) {
+      console.log('Preventing automatic pause in background');
+      setTimeout(() => {
+        if (playerRef.current) {
+          try {
+            playerRef.current.internalPlayer.playVideo();
+          } catch (error) {
+            console.log('Failed to resume background playback:', error);
+          }
+        }
+      }, 100);
+      return; // Don't sync this pause
+    }
     
     if (state === 1) { // Playing
       setIsPlaying(true);
@@ -129,7 +262,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
     } else if (state === 2) { // Paused
       setIsPlaying(false);
       setIsBuffering(false);
-      if (isHost) {
+      if (isHost && !isAppInBackground) { // Don't sync pauses from background
         syncMusicState({
           videoId,
           videoTitle,
@@ -192,6 +325,13 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       player.pauseVideo();
     } else {
       player.playVideo();
+      
+      // Mobile: Ensure playback starts even if in background
+      if (isMobile) {
+        setTimeout(() => {
+          player.playVideo();
+        }, 100);
+      }
     }
   };
 
@@ -222,20 +362,25 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       const interval = setInterval(() => {
         const player = playerRef.current.internalPlayer;
         if (player && typeof player.getCurrentTime === 'function') {
-          const time = player.getCurrentTime();
-          setCurrentTime(time);
-          
-          // Sync every 5 seconds when playing
-          if (Date.now() - lastSyncTime > 5000) {
-            syncMusicState({
-              videoId,
-              videoTitle,
-              isPlaying: true,
-              currentTime: time,
-              volume,
-              duration
-            });
-            setLastSyncTime(Date.now());
+          try {
+            const time = player.getCurrentTime();
+            setCurrentTime(time);
+            
+            // Sync every 5 seconds when playing, more frequently in background
+            const syncInterval = isAppInBackground ? 3000 : 5000;
+            if (Date.now() - lastSyncTime > syncInterval) {
+              syncMusicState({
+                videoId,
+                videoTitle,
+                isPlaying: true,
+                currentTime: time,
+                volume,
+                duration
+              });
+              setLastSyncTime(Date.now());
+            }
+          } catch (error) {
+            console.log('Progress tracking error:', error);
           }
         }
       }, 1000);
@@ -243,7 +388,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       syncIntervalRef.current = interval;
       return () => clearInterval(interval);
     }
-  }, [isHost, isPlaying, videoId, videoTitle, volume, duration, lastSyncTime, syncMusicState]);
+  }, [isHost, isPlaying, videoId, videoTitle, volume, duration, lastSyncTime, syncMusicState, isAppInBackground]);
 
   // YouTube player options
   const playerOptions = {
@@ -257,7 +402,13 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       rel: 0,
       showinfo: 0,
       modestbranding: 1,
-      playsinline: 1
+      playsinline: 1,
+      // Enhanced mobile support
+      enablejsapi: 1,
+      origin: window.location.origin,
+      // Background playback hints
+      iv_load_policy: 3,
+      cc_load_policy: 0
     }
   };
 
@@ -270,13 +421,19 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
 
   return (
     <div className="glass-effect rounded-2xl p-4 sm:p-6 shadow-3d">
-      {/* Header */}
+      {/* Header with background status */}
       <div className="flex items-center justify-between mb-4 sm:mb-6">
         <div className="flex items-center space-x-2">
           <Music className="w-5 h-5 text-purple-400" />
           <h3 className="text-lg sm:text-xl font-bold text-white">Music Player</h3>
         </div>
         <div className="flex items-center space-x-2">
+          {/* Background playback indicator */}
+          {isMobile && isAppInBackground && (
+            <div className="bg-orange-500/20 text-orange-400 px-2 py-1 rounded-lg text-xs font-medium">
+              Background
+            </div>
+          )}
           {/* Sync Status */}
           <div className="flex items-center space-x-1">
             {syncStatus === 'connected' ? (
@@ -300,6 +457,15 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
           )}
         </div>
       </div>
+
+      {/* Mobile background playback notice */}
+      {isMobile && backgroundPlayEnabled && (
+        <div className="bg-green-600/10 border border-green-500/20 rounded-xl p-3 mb-4">
+          <p className="text-xs sm:text-sm text-green-300 text-center">
+            📱 Background playback enabled - music will continue when you switch apps
+          </p>
+        </div>
+      )}
 
       {/* YouTube Link Input (Host Only) */}
       {isHost && (
@@ -326,7 +492,7 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
         </form>
       )}
 
-      {/* Video Player */}
+      {/* Enhanced Video Player with background support */}
       {videoId ? (
         <div className="mb-6">
           <div className="youtube-container">
