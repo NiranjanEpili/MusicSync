@@ -2,9 +2,9 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://niranjanepili.engineer/sitemap.xml
+Sitemap: https://musicsync.vercel.app/sitemap.xml
 
-# Block sensitive paths
+# Block sensitive paths  
 Disallow: /admin/
 Disallow: /api/
 Disallow: /_next/
