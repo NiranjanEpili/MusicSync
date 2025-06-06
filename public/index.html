@@ -10,6 +10,24 @@
     <meta name="apple-mobile-web-app-title" content="MusicSync" />
     <meta name="mobile-web-app-capable" content="yes" />
     
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Sync music in real-time with friends across all devices. Create rooms, share YouTube videos, and listen together!" />
+    <meta name="keywords" content="music sync, youtube sync, listen together, real-time music, share music, group listening" />
+    <meta name="author" content="MusicSync" />
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="MusicSync - Real-time Music Sync" />
+    <meta property="og:description" content="Sync music in real-time with friends across all devices" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://your-domain.vercel.app" />
+    <meta property="og:image" content="%PUBLIC_URL%/logo512.png" />
+    
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="MusicSync - Real-time Music Sync" />
+    <meta name="twitter:description" content="Sync music in real-time with friends across all devices" />
+    <meta name="twitter:image" content="%PUBLIC_URL%/logo512.png" />
+    
     <!-- Background playback support -->
     <meta name="format-detection" content="telephone=no" />
     <meta name="msapplication-tap-highlight" content="no" />
@@ -17,6 +35,7 @@
     <!-- Preload hints -->
     <link rel="preconnect" href="https://www.youtube.com" />
     <link rel="preconnect" href="https://i.ytimg.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
     
     <meta name="description" content="Sync music in real-time with friends across all devices" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
@@ -57,6 +76,11 @@
       .loading-hidden {
         opacity: 0;
         pointer-events: none;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
       }
     </style>
   </head>
@@ -102,12 +126,5 @@
         });
       }
     </script>
-    
-    <style>
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-    </style>
   </body>
 </html>

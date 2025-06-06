@@ -1,4 +1,17 @@
 User-agent: *
 Allow: /
 
+# Sitemap
 Sitemap: https://niranjanepili.engineer/sitemap.xml
+
+# Block sensitive paths
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /node_modules/
+
+# Allow common assets
+Allow: /static/
+Allow: /images/
+Allow: /favicon.ico
+Allow: /manifest.json

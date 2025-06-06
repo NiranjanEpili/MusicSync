@@ -1,35 +1,61 @@
 {
-  "name": "MusicSync",
+  "name": "MusicSync - Real-time Music Sync",
   "short_name": "MusicSync",
-  "description": "Sync music in real-time with friends",
+  "description": "Sync music in real-time with friends across all devices",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1e1b4b",
   "theme_color": "#7c3aed",
   "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["music", "entertainment", "social"],
   "icons": [
     {
-      "src": "/favicon.ico",
+      "src": "favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
       "type": "image/x-icon"
     },
     {
-      "src": "/logo192.png",
+      "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "maskable any"
     },
     {
-      "src": "/logo512.png",
+      "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "maskable any"
     }
   ],
-  "categories": ["music", "entertainment", "social"],
   "screenshots": [
     {
-      "src": "/screenshot1.png",
+      "src": "screenshot-mobile.png",
       "type": "image/png",
-      "sizes": "1280x720"
+      "sizes": "414x896",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "screenshot-desktop.png",
+      "type": "image/png",
+      "sizes": "1280x720",
+      "form_factor": "wide"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "Create Room",
+      "short_name": "Create",
+      "description": "Create a new music room",
+      "url": "/?action=create",
+      "icons": [
+        {
+          "src": "logo192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false
 }
