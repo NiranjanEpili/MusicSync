@@ -23,9 +23,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "predeploy": "npm run build",
-    "deploy": "firebase deploy --only hosting"
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
@@ -45,15 +43,5 @@
       "last 1 safari version"
     ]
   },
-  "homepage": ".",
-  "keywords": [
-    "music",
-    "sync",
-    "youtube",
-    "real-time",
-    "firebase",
-    "react"
-  ],
-  "author": "MusicSync Team",
-  "description": "Real-time music sync app for listening together"
+  "homepage": "."
 }
