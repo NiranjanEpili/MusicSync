@@ -37,16 +37,6 @@ Real-time music synchronization app that allows friends to listen to YouTube vid
 - **Video Player**: react-youtube
 - **Deployment**: Vercel
 
-## Installation 📲
-
-### Web App
-Just visit the URL - works instantly in any browser!
-
-### Mobile App (PWA)
-1. Open in mobile browser
-2. Look for "Install" prompt
-3. Add to home screen for app-like experience
-
 ## Development 👨‍💻
 
 ```bash
@@ -58,74 +48,6 @@ npm start
 
 # Build for production
 npm run build
-
-# Deploy to Vercel
-vercel --prod
 ```
-
-## Environment Setup 🔧
-
-1. Create Firebase project
-2. Enable Realtime Database
-3. Update `src/config/firebase.js` with your config
-4. Set database rules for public access
-
-## Database Rules 📋
-
-```json
-{
-  "rules": {
-    ".read": true,
-    ".write": true,
-    "rooms": {
-      "$roomId": {
-        ".read": true,
-        ".write": true
-      }
-    }
-  }
-}
-```
-
-## Features in Detail 🔍
-
-### Real-time Sync
-- Host controls playback
-- Everyone else follows automatically
-- Smart buffering handling
-- 2-second sync tolerance
-
-### Mobile Optimizations
-- Touch-friendly interface
-- Background audio support
-- PWA installation
-- Safe area handling for iOS
-
-### Cross-platform Support
-- iOS Safari ✅
-- Android Chrome ✅
-- Desktop browsers ✅
-- All modern browsers ✅
-
-## Contributing 🤝
-
-1. Fork the repository
-2. Create feature branch
-3. Make changes
-4. Test on multiple devices
-5. Submit pull request
-
-## License 📄
-
-MIT License - feel free to use for your own projects!
-
-## Support 💬
-
-Having issues? Check these common solutions:
-
-- **Video won't play**: Try a different YouTube URL
-- **Out of sync**: Use the manual "Sync" button
-- **Mobile audio stops**: Enable notifications/background app refresh
-- **Connection issues**: Check your internet connection
 
 Made with ❤️ for music lovers everywhere!
