@@ -149,10 +149,19 @@ const MusicPlayer = ({ roomId, isHost, userName }) => {
       
       // Sync every 5 seconds
       if (Math.floor(time) % 5 === 0) {
-        syncMusicState();
+        // Inline sync to avoid dependency issues
+        const musicRef = ref(database, `rooms/${roomId}/music`);
+        set(musicRef, {
+          isPlaying,
+          currentTime: time,
+          videoId,
+          videoTitle,
+          lastUpdated: Date.now(),
+          updatedBy: userName
+        });
       }
     }
-  }, [isHost]);
+  }, [isHost, roomId, isPlaying, videoId, videoTitle, userName]);
 
   // Update time every second
   useEffect(() => {
