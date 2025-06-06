@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, MessageCircle } from 'lucide-react';
-import { ref, push, onValue, serverTimestamp } from 'firebase/database';
+import { ref, push, onValue } from 'firebase/database';
 import { database } from '../config/firebase';
 
 const Chat = ({ roomId, userName }) => {
