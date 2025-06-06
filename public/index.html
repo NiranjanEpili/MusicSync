@@ -1,46 +1,120 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Real-time music sync app - Watch YouTube videos together in perfect sync" />
-    <meta name="keywords" content="music sync, watch together, youtube sync, real-time, firebase" />
-    <meta name="author" content="MusicSync" />
-    <title>MusicSync - Sync Music in Real Time</title>
-    
-    <!-- Open Graph Meta Tags for social sharing -->
-    <meta property="og:title" content="MusicSync - Watch YouTube Together" />
-    <meta property="og:description" content="Create rooms and watch YouTube videos in perfect sync with friends" />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="%PUBLIC_URL%/logo192.png" />
-    
-    <!-- Favicon -->
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     
-    <!-- YouTube API Configuration for production -->
-    <script>
-      // Configure YouTube API
-      window.YT_ready = function() {
-        console.log('YouTube API ready');
-      };
-      
-      // Handle YouTube API messages gracefully
-      window.addEventListener('message', function(event) {
-        if (event.origin !== 'https://www.youtube.com') return;
-        // Handle YouTube messages safely
-      });
-      
-      // Prevent console errors in production
-      if (process.env.NODE_ENV === 'production') {
-        console.log = function() {};
-        console.warn = function() {};
+    <!-- Mobile-first viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#7c3aed" />
+    <meta name="description" content="Sync music in real-time with friends across all devices" />
+    
+    <!-- PWA Settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MusicSync" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    
+    <!-- iOS Icons -->
+    <link rel="apple-touch-icon" sizes="57x57" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="60x60" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="72x72" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="76x76" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="114x114" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="120x120" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="144x144" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/logo192.png" />
+    
+    <!-- Android Chrome -->
+    <link rel="icon" type="image/png" sizes="192x192" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="96x96" href="%PUBLIC_URL%/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon.ico" />
+    
+    <!-- Prevent auto-zoom on input focus (iOS) -->
+    <style>
+      input[type="text"], input[type="url"], input[type="range"] {
+        font-size: 16px !important;
       }
+      
+      /* Hide address bar on mobile */
+      @media screen and (max-width: 768px) {
+        html, body {
+          height: 100vh;
+          height: -webkit-fill-available;
+        }
+        #root {
+          min-height: 100vh;
+          min-height: -webkit-fill-available;
+        }
+      }
+      
+      /* Disable selection on controls */
+      .no-select {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+    </style>
+    
+    <!-- Audio context unlock for all platforms -->
+    <script>
+      // Cross-platform audio context unlock
+      function unlockAudioContext() {
+        if (typeof window !== 'undefined') {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) {
+            const audioContext = new AudioContext();
+            if (audioContext.state === 'suspended') {
+              const unlock = () => {
+                audioContext.resume().then(() => {
+                  document.body.removeEventListener('touchstart', unlock, true);
+                  document.body.removeEventListener('touchend', unlock, true);
+                  document.body.removeEventListener('mousedown', unlock, true);
+                  document.body.removeEventListener('keydown', unlock, true);
+                  document.body.removeEventListener('click', unlock, true);
+                });
+              };
+              
+              // Listen to all possible user interactions
+              document.body.addEventListener('touchstart', unlock, true);
+              document.body.addEventListener('touchend', unlock, true);
+              document.body.addEventListener('mousedown', unlock, true);
+              document.body.addEventListener('keydown', unlock, true);
+              document.body.addEventListener('click', unlock, true);
+            }
+          }
+        }
+      }
+      
+      // Initialize on load
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', unlockAudioContext);
+      } else {
+        unlockAudioContext();
+      }
+      
+      // PWA install prompt
+      let deferredPrompt;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        // Show install button
+        const installBtn = document.getElementById('install-btn');
+        if (installBtn) {
+          installBtn.style.display = 'block';
+        }
+      });
     </script>
+    
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <title>MusicSync - Sync Music with Friends</title>
   </head>
-  <body class="dark:bg-gray-900">
+  <body class="no-select">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
   </body>

@@ -102,19 +102,19 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-4">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 safe-area-inset">
+      <div className="container py-4 sm:py-6">
         {/* Header */}
-        <div className="glass-effect rounded-2xl p-6 mb-6 shadow-3d">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex-1">
-              <div className="flex items-center space-x-3 mb-2">
-                <h1 className="text-2xl font-bold text-white">Room</h1>
-                <div className="flex items-center space-x-2 bg-gray-800/50 px-3 py-1 rounded-lg">
-                  <span className="text-xl font-mono text-purple-300">{roomId}</span>
+        <div className="glass-effect rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6 shadow-3d">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-white">Room</h1>
+                <div className="flex items-center space-x-2 bg-gray-800/50 px-3 py-2 rounded-lg w-fit">
+                  <span className="text-lg sm:text-xl font-mono text-purple-300">{roomId}</span>
                   <button
                     onClick={copyRoomCode}
-                    className="text-gray-400 hover:text-white transition-colors p-1"
+                    className="text-gray-400 hover:text-white transition-colors p-1 btn-3d"
                     title="Copy room code"
                   >
                     {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
@@ -122,26 +122,26 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
                 </div>
               </div>
               
-              <div className="flex items-center space-x-4 text-gray-300">
+              <div className="flex flex-wrap items-center gap-4 text-sm sm:text-base text-gray-300">
                 {/* Connection Status */}
                 <div className="flex items-center space-x-1">
                   <div className={`w-2 h-2 rounded-full ${
                     connectionStatus === 'connected' ? 'bg-green-400' : 
                     connectionStatus === 'error' ? 'bg-red-400' : 'bg-yellow-400'
                   }`}></div>
-                  <span className="text-sm">
+                  <span className="text-xs sm:text-sm">
                     {connectionStatus === 'connected' ? 'Connected' : 
                      connectionStatus === 'error' ? 'Connection Error' : 'Connecting...'}
                   </span>
                 </div>
                 <div className="flex items-center space-x-1">
                   <Users className="w-4 h-4" />
-                  <span>{connectedUsers.length} connected</span>
+                  <span className="text-xs sm:text-sm">{connectedUsers.length} connected</span>
                 </div>
                 {isHost && (
                   <div className="flex items-center space-x-1 text-yellow-400">
                     <Crown className="w-4 h-4" />
-                    <span>Host</span>
+                    <span className="text-xs sm:text-sm">Host</span>
                   </div>
                 )}
               </div>
@@ -149,7 +149,7 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
             
             <button
               onClick={handleLeaveRoom}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl btn-3d transition-all flex items-center space-x-2"
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl btn-3d transition-all flex items-center justify-center space-x-2 text-sm sm:text-base w-full sm:w-auto"
             >
               <LogOut className="w-4 h-4" />
               <span>Leave</span>
@@ -158,15 +158,17 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
 
           {/* Room Code Sharing */}
           {isHost && (
-            <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 mb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-white font-medium mb-1">Share Room Code</h3>
-                  <p className="text-sm text-gray-300">Ask friends to join using: <span className="font-mono text-purple-300">{roomId}</span></p>
+            <div className="bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl p-4 mb-4 mt-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1">
+                  <h3 className="text-white font-medium mb-1 text-sm sm:text-base">Share Room Code</h3>
+                  <p className="text-xs sm:text-sm text-gray-300">
+                    Ask friends to join using: <span className="font-mono text-purple-300 bg-purple-900/30 px-2 py-1 rounded">{roomId}</span>
+                  </p>
                 </div>
                 <button
                   onClick={copyRoomCode}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg btn-3d transition-all flex items-center space-x-2 text-sm"
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg btn-3d transition-all flex items-center justify-center space-x-2 text-sm w-full sm:w-auto"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   <span>{copied ? 'Copied!' : 'Copy'}</span>
@@ -187,26 +189,30 @@ const Room = ({ roomId, userName, isHost, onLeaveRoom }) => {
             {connectedUsers.map((user, index) => (
               <div
                 key={index}
-                className="bg-gray-800/50 px-3 py-1 rounded-full text-sm text-gray-300 flex items-center space-x-1"
+                className="bg-gray-800/50 px-3 py-2 rounded-full text-xs sm:text-sm text-gray-300 flex items-center space-x-1"
               >
                 {user.isHost && <Crown className="w-3 h-3 text-yellow-400" />}
-                <span>{user.name}</span>
+                <span className="truncate max-w-[100px] sm:max-w-none">{user.name}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Main Content */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          <MusicPlayer 
-            roomId={roomId} 
-            isHost={isHost} 
-            userName={userName} 
-          />
-          <Chat 
-            roomId={roomId} 
-            userName={userName} 
-          />
+        {/* Main Content - Responsive Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+          <div className="order-1">
+            <MusicPlayer 
+              roomId={roomId} 
+              isHost={isHost} 
+              userName={userName} 
+            />
+          </div>
+          <div className="order-2">
+            <Chat 
+              roomId={roomId} 
+              userName={userName} 
+            />
+          </div>
         </div>
       </div>
     </div>
