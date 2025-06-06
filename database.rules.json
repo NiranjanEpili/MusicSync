@@ -1,0 +1,24 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomId": {
+        ".read": true,
+        ".write": true,
+        ".validate": "newData.hasChildren() || !data.exists()",
+        "users": {
+          "$userId": {
+            ".validate": "newData.hasChildren(['name', 'isHost', 'joinedAt']) || !newData.exists()"
+          }
+        },
+        "messages": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['text', 'sender', 'timestamp']) || !newData.exists()"
+          }
+        },
+        "music": {
+          ".validate": "newData.hasChildren(['isPlaying', 'currentTime']) || !newData.exists()"
+        }
+      }
+    }
+  }
+}
